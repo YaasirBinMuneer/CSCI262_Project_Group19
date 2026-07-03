@@ -1,0 +1,39 @@
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# Environment variables / secrets
+.env
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE folders
+.vscode/
+.idea/
+
+# Editor backups
+*.swp
+*.swo
+*~
+
+# Flask session files
+flask_session/
+instance/
+
+# Logs and test caches
+*.log
+.pytest_cache/
+
+# Claude Code configuration
+.claude/
