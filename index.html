@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Password Similarity Detection Using Bloom Filters | CSCI262 Spring 2026</title>
+<style>
+    :root {
+        --bg:        #f0f4f8;
+        --bg-panel:  #e8edf3;
+        --card:      #ffffff;
+        --card-alt:  #f7f9fc;
+        --border:    #d1dae6;
+        --border-lt: #b8c5d6;
+        --text:      #1a2a3a;
+        --sub:       #4a6080;
+        --sub-dim:   #7a92aa;
+        --cyan:      #0284c7;
+        --cyan-dim:  #e0f2fe;
+        --blue:      #2563eb;
+        --red:       #dc2626;
+        --red-dim:   #fee2e2;
+        --purple:    #7c3aed;
+        --purple-dim:#f3e8ff;
+        --orange:    #ea580c;
+        --orange-dim:#ffedd5;
+        --green:     #16a34a;
+        --green-dim: #dcfce7;
+        --amber:     #d97706;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+        min-height: 100%;
+        font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+        font-size: 14.5px;
+        color: var(--text);
+        background: var(--bg);
+        background-image:
+            radial-gradient(circle at 15% 0%, rgba(2,132,199,0.06), transparent 45%),
+            radial-gradient(circle at 85% 10%, rgba(124,58,237,0.04), transparent 40%);
+    }
+
+    body { display: flex; flex-direction: column; }
+
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--card-alt); }
+    ::-webkit-scrollbar-thumb { background: var(--border-lt); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--sub-dim); }
+
+    .mono { font-family: Consolas, 'Courier New', monospace; }
+
+    /* ═══════════════════════════ HEADER ═══════════════════════════ */
+    header {
+        position: sticky; top: 0; z-index: 30;
+        background: linear-gradient(180deg, var(--bg-panel), var(--bg));
+        border-bottom: 1px solid var(--border);
+        padding: 16px 26px;
+    }
+
+    .hdr-top { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .hdr-left { display: flex; align-items: center; gap: 14px; }
+
+    .hdr-logo {
+        width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+        background: linear-gradient(135deg, var(--cyan), var(--purple));
+        display: flex; align-items: center; justify-content: center;
+        font-size: 20px; color: #ffffff; font-weight: 900;
+        box-shadow: 0 0 18px rgba(2,132,199,0.3);
+    }
+
+    header h1 {
+        font-size: 18px; font-weight: 800; letter-spacing: 0.02em;
+        color: var(--text); text-transform: uppercase;
+    }
+
+    header .hdr-sub { font-size: 12px; color: var(--sub); margin-top: 2px; }
+
+    .hdr-badge {
+        font-size: 11px; font-weight: 700; padding: 5px 12px; border-radius: 999px;
+        background: var(--cyan-dim); color: var(--cyan); border: 1px solid rgba(2,132,199,0.35);
+    }
+
+    .stat-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+
+    .stat-chip {
+        flex: 1 1 150px; min-width: 140px;
+        background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+        padding: 8px 12px;
+    }
+
+    .stat-chip .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--sub-dim); }
+    .stat-chip .sc-value { font-size: 14px; font-weight: 700; font-family: Consolas, monospace; color: var(--text); margin-top: 2px; }
+
+    /* ═══════════════════════════ LAYOUT ═══════════════════════════ */
+    .page { max-width: 1500px; margin: 0 auto; width: 100%; padding: 18px 26px 40px; }
+
+    .layout { display: flex; gap: 18px; align-items: flex-start; margin-top: 18px; }
+
+    .sidebar { width: 380px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; position: sticky; top: var(--sidebar-top, 210px); max-height: calc(100vh - var(--sidebar-top, 210px) - 16px); overflow-y: auto; }
+    .main-col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ═══════════════════════════ CARDS ═══════════════════════════ */
+    .card {
+        background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+        padding: 20px 22px; box-shadow: 0 4px 16px rgba(0,0,0,0.07);
+    }
+
+    .card-label {
+        font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em;
+        color: var(--sub); margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+
+    .card-sub { font-size: 12.5px; color: var(--sub); margin-bottom: 12px; line-height: 1.6; }
+
+    /* ═══════════════════════════ BUTTONS / INPUTS ═══════════════════════════ */
+    .btn {
+        height: 42px; padding: 0 18px; border-radius: 9px; border: 1px solid var(--border-lt);
+        font-size: 13.5px; font-weight: 700; cursor: pointer; background: var(--card-alt); color: var(--text);
+        transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    }
+    .btn:hover { background: #e2e8f0; }
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary {
+        background: linear-gradient(135deg, var(--cyan), #0369a1); color: #ffffff; border: none;
+        box-shadow: 0 4px 14px rgba(2,132,199,0.3);
+    }
+    .btn-primary:hover { filter: brightness(1.08); }
+
+    .btn-block { width: 100%; }
+    .btn-sm { height: 34px; padding: 0 12px; font-size: 12.5px; }
+
+    input[type="password"], input[type="text"], input[type="number"] {
+        height: 46px; padding: 0 16px; border-radius: 9px; border: 1.5px solid var(--border-lt);
+        background: var(--card-alt); color: var(--text); font-size: 15px; outline: none;
+        transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(2,132,199,0.15); }
+    input::placeholder { color: var(--sub-dim); }
+
+    input[type="range"] { -webkit-appearance: none; width: 100%; height: 6px; border-radius: 3px; background: var(--border-lt); outline: none; }
+    input[type="range"]::-webkit-slider-thumb {
+        -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%;
+        background: var(--cyan); cursor: pointer; box-shadow: 0 0 8px rgba(2,132,199,0.5); border: 2px solid #ffffff;
+    }
+    input[type="range"]::-moz-range-thumb {
+        width: 18px; height: 18px; border-radius: 50%; background: var(--cyan); cursor: pointer; border: 2px solid #ffffff;
+    }
+
+    .row-gap { display: flex; gap: 10px; }
+    .file-input { font-size: 12px; color: var(--sub); }
+
+    /* ═══════════════════════════ DATASET STATS LIST ═══════════════════════════ */
+    .stat-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .stat-list .sl-row { display: flex; justify-content: space-between; font-size: 12.5px; padding: 7px 10px; background: var(--card-alt); border-radius: 7px; border: 1px solid var(--border); }
+    .stat-list .sl-row span:first-child { color: var(--sub); }
+    .stat-list .sl-row span:last-child { font-weight: 700; font-family: Consolas, monospace; }
+
+    .ds-message { font-size: 12px; margin-top: 8px; min-height: 15px; }
+    .c-red { color: var(--red); } .c-green { color: var(--green); } .c-amber { color: var(--amber); }
+    .c-cyan { color: var(--cyan); } .c-purple { color: var(--purple); } .c-orange { color: var(--orange); }
+
+    .eg { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 9px; font-size: 12.5px; line-height: 1.6; }
+    .eg-title { font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--sub); margin-bottom: 5px; }
+
+    .justif-tbl { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+    .justif-tbl th {
+        background: var(--card-alt); padding: 6px 8px; text-align: left; font-weight: 700; font-size: 10.5px;
+        text-transform: uppercase; letter-spacing: 0.05em; color: var(--sub); border-bottom: 1px solid var(--border);
+    }
+    .justif-tbl td { padding: 5px 8px; border-bottom: 1px solid var(--border); font-family: Consolas, monospace; }
+    .justif-tbl tr:last-child td { border-bottom: none; }
+
+    /* ═══════════════════════════ BIT GRID (shared renderer) ═══════════════════════════ */
+    .bitgrid-scroll { overflow-x: auto; background: var(--card-alt); border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; }
+    .bitgrid-row { display: flex; align-items: center; gap: 8px; margin-bottom: 2px; }
+    .bitgrid-label { font-size: 10px; color: var(--sub-dim); font-family: Consolas, monospace; width: 42px; flex-shrink: 0; text-align: right; position: sticky; left: 0; background: var(--card-alt); }
+    .bitgrid-bits { display: flex; gap: 7px; flex: 1; justify-content: center; }
+    .bitgrid-group { display: flex; gap: 1px; }
+    .bitgrid-cell { width: 7px; height: 7px; border-radius: 1px; background: #e2e8f0; }
+
+    .bg-cyan   { background: var(--cyan) !important; }
+    .bg-purple { background: var(--purple) !important; }
+    .bg-red-glow { background: var(--red) !important; box-shadow: 0 0 5px 1px rgba(220,38,38,0.55); }
+    .bg-blue-dim { background: #bae6fd !important; }
+    .bg-purple-dim { background: #ddd6fe !important; }
+    .bg-orange { background: var(--orange) !important; }
+    .bg-purple-diff { background: var(--purple) !important; }
+    .bg-slate-mid { background: #94a3b8 !important; }
+
+    .bitgrid-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 10px; font-size: 11px; color: var(--sub); }
+    .bitgrid-legend span { display: inline-flex; align-items: center; gap: 5px; }
+    .legend-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+    .bit-stats { display: flex; background: var(--card-alt); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 14px; }
+    .bs-item { flex: 1; padding: 9px 10px; font-size: 11.5px; color: var(--sub); border-right: 1px solid var(--border); text-align: center; }
+    .bs-item:last-child { border-right: none; }
+    .bs-val { display: block; font-size: 19px; font-weight: 800; font-family: Consolas, monospace; color: var(--text); margin-top: 3px; }
+
+    /* ═══════════════════════════ BI-GRAM CHIPS ═══════════════════════════ */
+    .chips-wrap { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px; margin-bottom: 4px; min-height: 26px; padding-bottom: 6px; }
+    .chip { display: inline-flex; align-items: center; flex-shrink: 0; background: var(--cyan-dim); border: 1px solid rgba(2,132,199,0.3); border-radius: 6px; padding: 3px 9px; font-family: Consolas, monospace; font-size: 12.5px; font-weight: 700; color: var(--cyan); }
+    .chip-arrow { display: inline-flex; align-items: center; flex-shrink: 0; color: var(--sub-dim); font-size: 12px; }
+
+    /* ═══════════════════════════ ATOM TABLE ═══════════════════════════ */
+    .atom-table { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px; }
+    .atom-card { min-width: 190px; flex-shrink: 0; background: var(--card-alt); border: 1px solid var(--border); border-radius: 10px; padding: 11px; }
+    .atom-card-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .atom-bigram { font-family: Consolas, monospace; font-size: 14px; font-weight: 800; color: var(--cyan); }
+    .atom-bits { font-size: 10px; color: var(--sub-dim); }
+    .atom-canvas { width: 100%; height: 54px; border-radius: 5px; border: 1px solid var(--border); image-rendering: pixelated; display: block; margin-bottom: 8px; }
+    .atom-meta { font-size: 10.5px; color: var(--sub); font-family: Consolas, monospace; line-height: 1.7; }
+    .atom-meta-row { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ═══════════════════════════ SIMILARITY CARDS ═══════════════════════════ */
+    .sim-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    @media (max-width: 900px) { .sim-grid { grid-template-columns: 1fr; } }
+
+    .sim-card { border-radius: 14px; padding: 18px 20px; border: 1px solid var(--border); background: var(--card-alt); transition: box-shadow 0.25s, border-color 0.25s; }
+    .sim-card-jaccard { border-color: rgba(220,38,38,0.35); color: var(--red); }
+    .sim-card-dice     { border-color: rgba(124,58,237,0.35); color: var(--purple); }
+    .sim-card-cosine   { border-color: rgba(234,88,12,0.35); color: var(--orange); }
+
+    .sim-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+    .sim-title { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; }
+    .sim-value { font-size: 34px; font-weight: 900; font-family: Consolas, monospace; color: var(--text); margin: 6px 0; }
+    .sim-bar-track { height: 9px; background: #e2e8f0; border-radius: 5px; overflow: hidden; margin-bottom: 10px; }
+    .sim-bar-fill { height: 100%; width: 0%; border-radius: 5px; transition: width 0.6s cubic-bezier(0.4,0,0.2,1); background: currentColor; }
+    .sim-contrib { font-size: 12px; color: var(--sub); min-height: 32px; }
+    .sim-formula { font-size: 11.5px; font-family: Consolas, monospace; color: var(--sub-dim); border-top: 1px solid var(--border); padding-top: 9px; margin-top: 9px; }
+
+    /* ═══════════════════════════ DECISION PANEL ═══════════════════════════ */
+    .decision-panel { border-radius: 16px; padding: 34px 24px; text-align: center; border: 2px solid var(--border); background: var(--card-alt); transition: border-color 0.3s, background 0.3s; }
+    .decision-panel.decision-accept { border-color: rgba(22,163,74,0.5); background: radial-gradient(circle at 50% 0%, rgba(22,163,74,0.08), var(--card-alt) 70%); }
+    .decision-panel.decision-reject { border-color: rgba(220,38,38,0.5); background: radial-gradient(circle at 50% 0%, rgba(220,38,38,0.07), var(--card-alt) 70%); }
+    .decision-panel.decision-error  { border-color: rgba(217,119,6,0.5); }
+
+    .decision-text { font-size: 42px; font-weight: 900; letter-spacing: 0.05em; color: var(--sub-dim); margin-bottom: 8px; }
+    .decision-reason { font-size: 13.5px; color: var(--sub); max-width: 560px; margin: 0 auto 18px; line-height: 1.6; }
+    .decision-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; max-width: 560px; margin: 0 auto; font-size: 13px; }
+    .decision-stats .ds-label { font-size: 10.5px; color: var(--sub-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+    .decision-stats .ds-value { font-weight: 800; font-family: Consolas, monospace; margin-top: 3px; font-size: 15px; }
+
+    /* ═══════════════════════════ MATCHING TABLE ═══════════════════════════ */
+    .justif-scroll { overflow-y: auto; max-height: 360px; border: 1px solid var(--border); border-radius: 10px; }
+    .justif-tbl th { position: sticky; top: 0; z-index: 1; }
+    .justif-tbl tr.best-row td { background: rgba(220,38,38,0.06); font-weight: 700; }
+    .justif-tbl tr:hover td { background: rgba(0,0,0,0.03); }
+    .star { color: var(--amber); }
+    .decision-cell { font-weight: 800; letter-spacing: 0.03em; }
+
+    /* ═══════════════════════════ EXPLAINABILITY TOGGLE ═══════════════════════════ */
+    .explain-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .explain-btn { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border-lt); background: var(--card-alt); color: var(--sub); font-size: 12.5px; font-weight: 700; cursor: pointer; }
+    .explain-btn.active { background: var(--cyan-dim); color: var(--cyan); border-color: rgba(2,132,199,0.4); }
+    .explain-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--text); }
+
+    /* ═══════════════════════════ LOG ═══════════════════════════ */
+    .log-box { background: #f1f5f9; color: #475569; font-family: Consolas, monospace; font-size: 12px; line-height: 1.8; border-radius: 10px; padding: 13px 15px; max-height: 210px; overflow-y: auto; border: 1px solid var(--border); }
+    .log-line { opacity: 0; white-space: pre-wrap; word-break: break-word; animation: logIn 0.25s ease forwards; }
+    @keyframes logIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+    .log-line.step { color: #0284c7; }
+    .log-line.ok   { color: #059669; }
+    .log-line.err  { color: #dc2626; }
+    .log-line.info { color: #64748b; }
+
+    @keyframes popIn { from { opacity:0; transform: scale(0.92) translateY(6px); } to { opacity:1; transform: scale(1) translateY(0); } }
+    .pop { animation: popIn 0.2s ease; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--border); border-top-color: var(--cyan); border-radius: 50%; animation: spin 0.8s linear infinite; margin-right: 5px; vertical-align: middle; }
+
+    .status-bar { text-align: center; font-size: 11.5px; color: var(--sub); padding: 12px 20px; border-top: 1px solid var(--border); margin-top: 10px; }
+
+    @media (max-width: 1150px) {
+        .layout { flex-direction: column; }
+        .sidebar { width: 100%; position: static; max-height: none; overflow-y: visible; }
+    }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════ 1. HEADER ══════════════════════════════════ -->
+<header id="siteHeader">
+    <div class="hdr-top">
+        <div class="hdr-left">
+            <div class="hdr-logo">&#128272;</div>
+            <div>
+                <h1>Password Similarity Detection Using Bloom Filters and Cryptographic Hashing</h1>
+                <div class="hdr-sub">CSCI262 Spring 2026 &nbsp;&middot;&nbsp; Group 19 &nbsp;&middot;&nbsp; Bi-gram Bloom Filters &middot; SHA-256 + MD5 &middot; Jaccard / Dice / Cosine</div>
+            </div>
+        </div>
+        <div class="hdr-badge">Spring 2026</div>
+    </div>
+
+    <div class="stat-strip">
+        <div class="stat-chip">
+            <div class="sc-label">Dataset Loaded</div>
+            <div class="sc-value" id="hdr-filename">{{ dataset_filename }}</div>
+        </div>
+        <div class="stat-chip">
+            <div class="sc-label">Dataset Entries</div>
+            <div class="sc-value" id="hdr-entries">{{ db_size }}</div>
+        </div>
+        <div class="stat-chip">
+            <div class="sc-label">Bloom Filter Size</div>
+            <div class="sc-value">{{ L }} bits</div>
+        </div>
+        <div class="stat-chip">
+            <div class="sc-label">Hash Functions</div>
+            <div class="sc-value">SHA-256 + MD5</div>
+        </div>
+        <div class="stat-chip">
+            <div class="sc-label">k</div>
+            <div class="sc-value">{{ K }}</div>
+        </div>
+    </div>
+</header>
+
+<div class="page">
+
+<!-- ══════════════════════════ 2. DATASET BLOOM FILTER SECTION ═══════════════════════════ -->
+<div class="card">
+    <div class="card-label">
+        <span>Dataset Bloom Filter &middot; OR of every β(p) in the loaded dataset ({{ L }} bits)</span>
+    </div>
+    <div class="card-sub">
+        This is the classic single-filter Bloom membership vector: every stored password's β(p) is OR&#8209;ed into one shared vector.
+        It refreshes automatically whenever the dataset is reloaded or replaced.
+    </div>
+    <div style="display:flex; gap:16px; align-items:flex-start;">
+        <div class="bitgrid-scroll" style="flex:1; min-width:0;" id="dataset-bloom-grid"></div>
+        <div class="bit-stats" style="flex-direction:column; flex-shrink:0; width:165px; margin-top:0; border-radius:10px;">
+            <div class="bs-item" style="border-right:none; border-bottom:1px solid var(--border);">Total Set Bits <span class="bs-val" id="dataset-bits-set">&mdash;</span></div>
+            <div class="bs-item" style="border-right:none; border-bottom:1px solid var(--border);">Occupancy Rate <span class="bs-val" id="dataset-occupancy">&mdash;</span></div>
+            <div class="bs-item" style="border-right:none;">False Positive Estimate <span class="bs-val" id="dataset-fp">&mdash;</span></div>
+        </div>
+    </div>
+    <div class="eg" id="dataset-saturation-note" style="display:none; margin-top:12px;">
+        <div class="eg-title c-amber">Bit Saturation Observed</div>
+        <span id="dataset-saturation-text"></span>
+    </div>
+</div>
+
+<div class="layout">
+
+<!-- ══════════════════════════ 8. SIDEBAR ══════════════════════════════════ -->
+<div class="sidebar">
+
+    <!-- ── Dataset Management ── -->
+    <div class="card">
+        <div class="card-label">Dataset Management</div>
+        <div class="file-input" style="margin-bottom:8px;">Upload a .txt word list (one password per line, 8&ndash;10 chars kept):</div>
+        <input type="file" id="ds-upload-input" accept=".txt" style="width:100%; margin-bottom:8px; font-size:12px; color:var(--sub);">
+        <div class="row-gap">
+            <button class="btn btn-block" onclick="uploadDataset()">Load Dataset</button>
+            <button class="btn btn-block" onclick="reloadDataset()">Reload Dataset</button>
+        </div>
+        <div class="ds-message" id="ds-message"></div>
+
+        <div class="stat-list">
+            <div class="sl-row"><span>Number of passwords</span><span id="ds-stat-count">{{ db_size }}</span></div>
+            <div class="sl-row"><span>Average password length</span><span id="ds-stat-avglen">&mdash;</span></div>
+            <div class="sl-row"><span>Unique passwords</span><span id="ds-stat-unique">&mdash;</span></div>
+            <div class="sl-row"><span>Current occupancy</span><span id="ds-stat-occupancy">&mdash;</span></div>
+        </div>
+    </div>
+
+    <!-- ── Threshold Management ── -->
+    <div class="card">
+        <div class="card-label">Threshold Management</div>
+        <div class="card-sub">Jaccard &ge; threshold &rarr; REJECT. Drag to explore &mdash; already-computed results update instantly.</div>
+        <input type="range" id="threshold-slider" min="0" max="1" step="0.01" value="{{ threshold }}" oninput="onThresholdChange(this.value)">
+        <div style="text-align:center; margin-top:10px; font-family:Consolas,monospace; font-size:15px; font-weight:800;" id="threshold-value-label-wrap">
+            Threshold = <span id="threshold-value-label" class="c-cyan">{{ '%.2f'|format(threshold) }}</span>
+        </div>
+
+        <button class="btn btn-primary btn-block" style="margin-top:14px;" id="threshold-optimize-btn" onclick="calculateBestThreshold()">
+            Calculate Best Threshold For Current Dataset
+        </button>
+
+        <div id="threshold-results" style="display:none; margin-top:12px;">
+            <div class="eg">
+                <div class="eg-title">Recommended Threshold</div>
+                <div class="mono c-cyan" style="font-size:18px; font-weight:800;" id="to-recommended">&mdash;</div>
+                <div style="margin-top:8px; color:var(--sub);" id="to-reasoning"></div>
+                <div class="stat-list" style="margin-top:10px;">
+                    <div class="sl-row"><span>Precision</span><span id="to-precision">&mdash;</span></div>
+                    <div class="sl-row"><span>Recall</span><span id="to-recall">&mdash;</span></div>
+                    <div class="sl-row"><span>F1 Score</span><span id="to-f1">&mdash;</span></div>
+                </div>
+                <button class="btn btn-block btn-sm" style="margin-top:10px;" id="to-apply-btn">Apply Recommended Threshold</button>
+            </div>
+        </div>
+    </div>
+
+
+</div><!-- /sidebar -->
+
+<!-- ══════════════════════════ MAIN COLUMN ══════════════════════════════════ -->
+<div class="main-col">
+
+    <!-- ══════ 3. PASSWORD ANALYSIS / INPUT ══════ -->
+    <div class="card">
+        <div class="card-label">Candidate Password</div>
+        <div class="row-gap" style="margin-bottom:12px;">
+            <input type="password" id="pwd" placeholder="8 - 10 characters" maxlength="10" autocomplete="off" style="flex:1;">
+            <button class="btn" id="showBtn" onclick="toggleShow()" style="width:86px;">Show</button>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="checkPassword()">Analyze Password</button>
+    </div>
+
+    <!-- Live Computation Log -->
+    <div class="card" id="log-card" style="display:none;">
+        <div class="card-label">Live Computation Log</div>
+        <div class="log-box" id="logBox"></div>
+    </div>
+
+    <!-- ══════ 6. BI-GRAM AND ATOM VISUALIZATION ══════ -->
+    <div class="card">
+        <div class="card-label">Bi-Gram &amp; Atom Breakdown</div>
+        <div class="card-sub" id="bigramMeta">Bi-grams and their per-atom Bloom filters will appear here after you analyze a password.</div>
+        <div class="chips-wrap" id="chipsWrap"></div>
+        <div class="atom-table" id="atomTable"></div>
+    </div>
+
+    <!-- ══════ 5. CANDIDATE BLOOM FILTER VISUALIZATION ══════ -->
+    <div class="card">
+        <div class="card-label">
+            <span>Candidate Password Bloom Filter &beta;(UserP)</span>
+            <span class="mono c-cyan" id="candidate-bits-set" style="font-size:12px;"></span>
+        </div>
+        <div class="card-sub">Full {{ L }}-bit vector, grouped in blocks of 10. Row labels show the starting bit index.</div>
+        <div class="bitgrid-scroll" id="candidate-bloom-grid"></div>
+    </div>
+
+    <!-- ══════ 4. SIMILARITY RESULTS ══════ -->
+    <div class="sim-grid">
+        <div class="sim-card sim-card-jaccard" id="card-jaccard">
+            <div class="sim-hdr"><span class="sim-title">Jaccard Coefficient</span></div>
+            <div class="sim-value" id="val-jaccard">0.0000</div>
+            <div class="sim-bar-track"><div class="sim-bar-fill" id="bar-jaccard"></div></div>
+            <div class="sim-contrib" id="contrib-jaccard">Primary decision metric.</div>
+            <div class="sim-formula">J = &gamma; / (k&beta;1 + k&beta;2 &minus; &gamma;)</div>
+        </div>
+        <div class="sim-card sim-card-dice" id="card-dice">
+            <div class="sim-hdr"><span class="sim-title">Dice Coefficient</span></div>
+            <div class="sim-value" id="val-dice">0.0000</div>
+            <div class="sim-bar-track"><div class="sim-bar-fill" id="bar-dice"></div></div>
+            <div class="sim-contrib" id="contrib-dice">Reference metric.</div>
+            <div class="sim-formula">&delta; = 2&gamma; / (k&beta;1 + k&beta;2)</div>
+        </div>
+        <div class="sim-card sim-card-cosine" id="card-cosine">
+            <div class="sim-hdr"><span class="sim-title">Cosine Similarity</span></div>
+            <div class="sim-value" id="val-cosine">0.0000</div>
+            <div class="sim-bar-track"><div class="sim-bar-fill" id="bar-cosine"></div></div>
+            <div class="sim-contrib" id="contrib-cosine">Reference metric.</div>
+            <div class="sim-formula">&phi; = &gamma; / (&radic;k&beta;1 &middot; &radic;k&beta;2)</div>
+        </div>
+    </div>
+
+    <div class="bit-stats" id="bit-stats" style="display:none;">
+        <div class="bs-item">&gamma; <span style="font-size:10px;">(shared bits)</span><span class="bs-val" id="stat-gamma">&mdash;</span></div>
+        <div class="bs-item">k<sub>&beta;1</sub> <span style="font-size:10px;">(candidate)</span><span class="bs-val" id="stat-k1">&mdash;</span></div>
+        <div class="bs-item">k<sub>&beta;2</sub> <span style="font-size:10px;">(best match)</span><span class="bs-val" id="stat-k2">&mdash;</span></div>
+    </div>
+
+    <!-- ══════ DECISION PANEL ══════ -->
+    <div class="decision-panel" id="decision-panel">
+        <div class="decision-text" id="decision-text">&mdash;</div>
+        <div class="decision-reason" id="decision-reason">Enter a password above and press Analyze Password.</div>
+        <div class="decision-stats" id="decision-stats" style="display:none;">
+            <div><div class="ds-label">Closest Password</div><div class="ds-value" id="dp-closest">&mdash;</div></div>
+            <div><div class="ds-label">Threshold</div><div class="ds-value" id="dp-threshold">&mdash;</div></div>
+            <div><div class="ds-label">Jaccard Score</div><div class="ds-value" id="dp-jaccard">&mdash;</div></div>
+        </div>
+    </div>
+
+    <!-- ══════ MATCHING PASSWORD TABLE ══════ -->
+    <div class="card" id="justif-card" style="display:none;">
+        <div class="card-label">JUSTIF &mdash; Matching Password Table</div>
+        <div class="card-sub">
+            Every dataset password ranked by Jaccard against the candidate. The
+            <span style="background:rgba(220,38,38,0.12); color:var(--red); padding:1px 6px; border-radius:4px; font-weight:700;">highlighted row</span>
+            with a <span class="star">&#9733;</span> is the closest match used for the verdict. Decision recomputes live as you move the threshold slider.
+        </div>
+        <div class="justif-scroll">
+            <table class="justif-tbl">
+                <thead><tr><th>Rank</th><th>Password</th><th>Jaccard</th><th>Dice</th><th>Cosine</th><th>Decision</th></tr></thead>
+                <tbody id="justif-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- ══════ BLOOM FILTER EXPLAINABILITY ══════ -->
+    <div class="card">
+        <div class="card-label">Bloom Filter Explainability</div>
+        <div class="card-sub">Switch between the candidate filter, the closest dataset match, their common-bit overlay (&gamma;, bold red glow), and their difference.</div>
+        <div class="explain-btns">
+            <button class="explain-btn" data-mode="candidate" onclick="setExplainMode('candidate')">Candidate Filter</button>
+            <button class="explain-btn" data-mode="closest" onclick="setExplainMode('closest')">Closest Filter</button>
+            <button class="explain-btn active" data-mode="common" onclick="setExplainMode('common')">Common Bits</button>
+            <button class="explain-btn" data-mode="difference" onclick="setExplainMode('difference')">Difference Filter</button>
+        </div>
+        <div class="explain-title" id="explain-title">Analyze a password to enable this view.</div>
+        <div class="bitgrid-scroll" id="explain-grid"></div>
+        <div class="bitgrid-legend">
+            <span><span class="legend-dot bg-red-glow"></span> Shared (&gamma;)</span>
+            <span><span class="legend-dot bg-cyan"></span> Candidate only</span>
+            <span><span class="legend-dot bg-purple"></span> Closest only</span>
+            <span><span class="legend-dot" style="background:#e2e8f0; border:1px solid var(--border-lt);"></span> Neither</span>
+        </div>
+    </div>
+
+    <!-- ══════ DATASET ENTRY BLOOM VIEWER (assignment-required #17 / #55) ══════ -->
+    <div class="card">
+        <div class="card-label">Dataset Entry Bloom Filter Viewer</div>
+        <div class="card-sub">Assignment-required screenshots: entry #17 and entry #55. Or inspect any dataset index.</div>
+        <div class="row-gap" style="margin-bottom:12px; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-sm" onclick="loadBloom(17)">Entry #17</button>
+            <button class="btn btn-sm" onclick="loadBloom(55)">Entry #55</button>
+            <span style="color:var(--sub); font-size:12.5px;">or</span>
+            <input type="number" id="bloom-idx" min="1" max="{{ db_size }}" placeholder="Index" style="width:100px; height:38px;">
+            <button class="btn btn-sm" onclick="loadBloom(document.getElementById('bloom-idx').value)">View</button>
+        </div>
+        <div id="bloom-result" style="display:none;" class="pop">
+            <div class="eg" id="bloom-meta" style="margin-bottom:10px;"></div>
+            <div class="bitgrid-scroll" id="bloom-grid"></div>
+        </div>
+        <div id="bloom-error" style="display:none; color:var(--red); font-size:13px; margin-top:8px;"></div>
+    </div>
+
+</div><!-- /main-col -->
+</div><!-- /layout -->
+
+<div class="status-bar" id="statusBar"><span class="spinner"></span> Loading dataset &hellip;</div>
+</div><!-- /page -->
+
+<script>
+const K_CONST = {{ K }};
+const L_CONST = {{ L }};
+let lastCheckData = null;
+let currentThreshold = parseFloat("{{ threshold }}");
+let explainMode = 'common';
+
+/* ── Show / Hide password ── */
+let showPwd = false;
+function toggleShow() {
+    showPwd = !showPwd;
+    document.getElementById('pwd').type = showPwd ? 'text' : 'password';
+    document.getElementById('showBtn').textContent = showPwd ? 'Hide' : 'Show';
+}
+document.getElementById('pwd').addEventListener('keydown', e => { if (e.key === 'Enter') checkPassword(); });
+
+/* ── Helpers ── */
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function escapeHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function shorten(hex) { return hex.length > 18 ? hex.slice(0,10) + '…' + hex.slice(-6) : hex; }
+
+function clearLog() { document.getElementById('logBox').innerHTML = ''; }
+function logLine(text, cls) {
+    const box = document.getElementById('logBox');
+    const line = document.createElement('div');
+    line.className = 'log-line' + (cls ? ' ' + cls : '');
+    line.textContent = text;
+    box.appendChild(line);
+    box.scrollTop = box.scrollHeight;
+}
+
+/* ── Generic 1000-bit grid renderer -- used by the dataset filter, candidate
+   filter, explainability overlay, and the dataset-entry viewer. ── */
+function renderBitGrid(container, bits, opts = {}) {
+    const { bits2 = null, mode = 'single', perRow = 100, groupSize = 10, color = 'cyan' } = opts;
+    container.innerHTML = '';
+    const rows = Math.ceil(bits.length / perRow);
+    const groupsPerRow = perRow / groupSize;
+
+    for (let r = 0; r < rows; r++) {
+        const rowWrap = document.createElement('div');
+        rowWrap.className = 'bitgrid-row';
+
+        const label = document.createElement('span');
+        label.className = 'bitgrid-label';
+        label.textContent = String(r * perRow).padStart(4, '0');
+        rowWrap.appendChild(label);
+
+        const bitsRow = document.createElement('div');
+        bitsRow.className = 'bitgrid-bits';
+
+        for (let g = 0; g < groupsPerRow; g++) {
+            const group = document.createElement('div');
+            group.className = 'bitgrid-group';
+            for (let c = 0; c < groupSize; c++) {
+                const idx = r * perRow + g * groupSize + c;
+                if (idx >= bits.length) break;
+                const b1 = bits[idx];
+                const b2 = bits2 ? bits2[idx] : null;
+                const cell = document.createElement('span');
+                cell.className = 'bitgrid-cell ' + cellClass(b1, b2, mode, color);
+                cell.title = `bit ${idx} = ${b1}` + (bits2 ? ` / ${b2}` : '');
+                group.appendChild(cell);
+            }
+            bitsRow.appendChild(group);
+        }
+        rowWrap.appendChild(bitsRow);
+        container.appendChild(rowWrap);
+    }
+}
+
+function cellClass(b1, b2, mode, color) {
+    if (mode === 'single') return b1 === '1' ? (color === 'purple' ? 'bg-purple' : 'bg-cyan') : '';
+    if (mode === 'closest') return b2 === '1' ? 'bg-purple' : '';
+    if (mode === 'common') {
+        if (b1 === '1' && b2 === '1') return 'bg-red-glow';
+        if (b1 === '1') return 'bg-blue-dim';
+        if (b2 === '1') return 'bg-purple-dim';
+        return '';
+    }
+    if (mode === 'difference') {
+        if (b1 === '1' && b2 === '0') return 'bg-cyan';
+        if (b1 === '0' && b2 === '1') return 'bg-purple-diff';
+        if (b1 === '1' && b2 === '1') return 'bg-slate-mid';
+        return '';
+    }
+    return '';
+}
+
+/* ── Bi-gram chips ── */
+function renderBigramChips(bigrams) {
+    const wrap = document.getElementById('chipsWrap');
+    wrap.innerHTML = '';
+    bigrams.forEach((b, i) => {
+        if (i > 0) {
+            const arrow = document.createElement('span');
+            arrow.className = 'chip-arrow';
+            arrow.textContent = '→';
+            wrap.appendChild(arrow);
+        }
+        const s = document.createElement('span');
+        s.className = 'chip pop';
+        s.textContent = b;
+        wrap.appendChild(s);
+    });
+}
+
+/* ── Atom table + mini bloom filter canvases ── */
+function drawAtomCanvas(canvas, positions) {
+    const cols = 50, rows = 20;
+    canvas.width = cols; canvas.height = rows;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#e2e8f0';
+    ctx.fillRect(0, 0, cols, rows);
+    ctx.fillStyle = '#f87171';
+    new Set(positions).forEach(pos => {
+        ctx.fillRect(pos % cols, Math.floor(pos / cols), 1, 1);
+    });
+}
+
+function renderAtomTable(atoms) {
+    const wrap = document.getElementById('atomTable');
+    wrap.innerHTML = '';
+    atoms.forEach(a => {
+        const card = document.createElement('div');
+        card.className = 'atom-card pop';
+        const posPreview = a.positions.slice(0, 6).join(', ') + (a.positions.length > 6 ? ', …' : '');
+        card.innerHTML = `
+            <div class="atom-card-hdr">
+                <span class="atom-bigram">"${escapeHtml(a.bigram)}"</span>
+                <span class="atom-bits">${a.bits_set}/${K_CONST} bits</span>
+            </div>
+            <canvas class="atom-canvas"></canvas>
+            <div class="atom-meta">
+                <div class="atom-meta-row" title="${a.sha256}">SHA256 ${shorten(a.sha256)}</div>
+                <div class="atom-meta-row" title="${a.md5}">MD5&nbsp;&nbsp;&nbsp; ${shorten(a.md5)}</div>
+                <div class="atom-meta-row" title="${a.positions.join(', ')}">Pos&nbsp;&nbsp;&nbsp;&nbsp; ${posPreview}</div>
+            </div>`;
+        wrap.appendChild(card);
+        drawAtomCanvas(card.querySelector('canvas'), a.positions);
+    });
+}
+
+/* ── Similarity cards ── */
+function updateSimilarityCards(data) {
+    setCard('jaccard', data.jaccard, true);
+    setCard('dice', data.dice, false);
+    setCard('cosine', data.cosine, false);
+}
+
+function setCard(name, value, isPrimary) {
+    document.getElementById('val-' + name).textContent = value.toFixed(4);
+    document.getElementById('bar-' + name).style.width = Math.min(value * 100, 100) + '%';
+    const contrib = document.getElementById('contrib-' + name);
+    if (isPrimary) {
+        const reject = value >= currentThreshold;
+        contrib.textContent = reject
+            ? `≥ ${currentThreshold.toFixed(2)} → drives the REJECT decision`
+            : `< ${currentThreshold.toFixed(2)} → supports the ACCEPT decision`;
+    } else {
+        contrib.textContent = 'Reference metric — corroborates the Jaccard-based decision.';
+    }
+}
+
+/* ── Decision panel ── */
+function updateDecisionPanel(data) {
+    const panel = document.getElementById('decision-panel');
+    const textEl = document.getElementById('decision-text');
+    const reasonEl = document.getElementById('decision-reason');
+    const reject = data.jaccard >= currentThreshold;
+
+    panel.className = 'decision-panel ' + (reject ? 'decision-reject' : 'decision-accept');
+    textEl.textContent = reject ? 'REJECTED' : 'ACCEPTED';
+    textEl.style.color = reject ? 'var(--red)' : 'var(--green)';
+
+    reasonEl.textContent = reject
+        ? `Rejected because similarity score ${data.jaccard.toFixed(4)} exceeds threshold ${currentThreshold.toFixed(2)} when compared against "${data.best_match}". Dice = ${data.dice.toFixed(4)} and Cosine = ${data.cosine.toFixed(4)} are also elevated, confirming high overlap.`
+        : `Accepted because the highest similarity score ${data.jaccard.toFixed(4)} (vs "${data.best_match}") stays below threshold ${currentThreshold.toFixed(2)}. Dice = ${data.dice.toFixed(4)} and Cosine = ${data.cosine.toFixed(4)} are also low, confirming the candidate is sufficiently distinct.`;
+
+    document.getElementById('dp-closest').textContent = data.best_match || '—';
+    document.getElementById('dp-threshold').textContent = currentThreshold.toFixed(2);
+    document.getElementById('dp-jaccard').textContent = data.jaccard.toFixed(4);
+    document.getElementById('decision-stats').style.display = '';
+}
+
+function setVerdictChecking() {
+    const panel = document.getElementById('decision-panel');
+    panel.className = 'decision-panel';
+    document.getElementById('decision-text').textContent = '…';
+    document.getElementById('decision-text').style.color = 'var(--sub-dim)';
+    document.getElementById('decision-reason').textContent = 'Checking …';
+    document.getElementById('decision-stats').style.display = 'none';
+}
+
+function setError(msg) {
+    const panel = document.getElementById('decision-panel');
+    panel.className = 'decision-panel decision-error';
+    document.getElementById('decision-text').textContent = '!';
+    document.getElementById('decision-text').style.color = 'var(--amber)';
+    document.getElementById('decision-reason').textContent = msg;
+    document.getElementById('decision-stats').style.display = 'none';
+}
+
+function setVerdictIdle() {
+    const panel = document.getElementById('decision-panel');
+    panel.className = 'decision-panel';
+    document.getElementById('decision-text').textContent = '—';
+    document.getElementById('decision-text').style.color = 'var(--sub-dim)';
+    document.getElementById('decision-reason').textContent = 'Enter a password above and press Analyze Password.';
+    document.getElementById('decision-stats').style.display = 'none';
+}
+
+/* ── Matching password table ── */
+function renderMatchingTable(data) {
+    const tbody = document.getElementById('justif-body');
+    tbody.innerHTML = '';
+    data.all_rows.forEach((row, i) => {
+        const tr = document.createElement('tr');
+        const isBest = row.password === data.best_match;
+        if (isBest) tr.className = 'best-row';
+        const decision = row.jaccard >= currentThreshold ? 'REJECT' : 'ACCEPT';
+        tr.innerHTML =
+            `<td>${i + 1}</td>` +
+            `<td>${isBest ? '<span class="star">★</span> ' : ''}${escapeHtml(row.password)}</td>` +
+            `<td>${row.jaccard.toFixed(4)}</td>` +
+            `<td>${row.dice.toFixed(4)}</td>` +
+            `<td>${row.cosine.toFixed(4)}</td>` +
+            `<td class="decision-cell ${decision === 'REJECT' ? 'c-red' : 'c-green'}">${decision}</td>`;
+        tbody.appendChild(tr);
+    });
+    document.getElementById('justif-card').style.display = '';
+}
+
+/* ── Explainability toggle ── */
+function setExplainMode(mode) {
+    explainMode = mode;
+    document.querySelectorAll('.explain-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    renderExplain();
+}
+
+function renderExplain() {
+    const grid = document.getElementById('explain-grid');
+    const titleEl = document.getElementById('explain-title');
+    if (!lastCheckData) { titleEl.textContent = 'Analyze a password to enable this view.'; grid.innerHTML = ''; return; }
+
+    const cand = lastCheckData.beta_full;
+    const closest = lastCheckData.best_beta_full;
+    const titles = {
+        candidate:  'Candidate Bloom Filter — β(UserP)',
+        closest:    `Closest Password Bloom Filter — β("${lastCheckData.best_match}")`,
+        common:     `Common Bit Overlay — γ = ${lastCheckData.gamma} shared positions (bold red glow)`,
+        difference: 'Difference Filter — bits set in exactly one of the two vectors',
+    };
+    titleEl.textContent = titles[explainMode] || titles.candidate;
+
+    if (explainMode === 'candidate') renderBitGrid(grid, cand, { mode: 'single', color: 'cyan' });
+    else if (explainMode === 'closest') renderBitGrid(grid, cand, { mode: 'closest', bits2: closest });
+    else if (explainMode === 'common') renderBitGrid(grid, cand, { mode: 'common', bits2: closest });
+    else if (explainMode === 'difference') renderBitGrid(grid, cand, { mode: 'difference', bits2: closest });
+}
+
+/* ── Analyze / Check ── */
+async function checkPassword() {
+    const pwd = document.getElementById('pwd').value.trim();
+    if (!pwd) return;
+    if (pwd.length < 8) { setError('Password must be at least 8 characters. Please resubmit a password between 8 and 10 characters.'); return; }
+    if (pwd.length > 10) { setError('Password must be at most 10 characters. Please resubmit a password between 8 and 10 characters.'); return; }
+
+    document.getElementById('log-card').style.display = '';
+    clearLog();
+    setVerdictChecking();
+    logLine('▶ Sending candidate password to /check …', 'info');
+
+    let data;
+    try {
+        const res = await fetch('/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pwd, threshold: currentThreshold })
+        });
+        data = await res.json();
+    } catch (_) {
+        setError('Request failed — is the server running?');
+        logLine('✗ Request failed — is the server running?', 'err');
+        return;
+    }
+
+    if (data.error) { setError(data.error); logLine('✗ ' + data.error, 'err'); return; }
+
+    lastCheckData = data;
+
+    try {
+        logLine('✓ Server response received', 'ok');
+        await sleep(250);
+
+        logLine(`① Pad password → "${data.padded}"`, 'step');
+        document.getElementById('bigramMeta').textContent = `Padded: "${data.padded}"  ·  computing bi-grams …`;
+        await sleep(300);
+
+        logLine(`② Extract ${data.bigrams.length} bi-grams: ${data.bigrams.join(', ')}`, 'step');
+        renderBigramChips(data.bigrams);
+        document.getElementById('bigramMeta').textContent = `Padded: "${data.padded}"  ·  ${data.bigrams.length} bi-grams extracted`;
+        await sleep(300);
+
+        logLine('③ Hash each bi-gram — f = SHA-256(b), g = MD5(b), h_i(b) = (f + i·g) mod ' + L_CONST + ', i = 0…' + (K_CONST - 1), 'step');
+        renderAtomTable(data.atoms);
+        await sleep(350);
+
+        renderBitGrid(document.getElementById('candidate-bloom-grid'), data.beta_full, { mode: 'single', color: 'cyan' });
+        document.getElementById('candidate-bits-set').textContent = `${data.k1} / ${L_CONST} bits set`;
+        logLine(`④ β(candidate) computed — ${data.k1} / ${L_CONST} bits set`, 'ok');
+        await sleep(350);
+
+        logLine(`⑤ Scan dataset — score Jaccard / Dice / Cosine against all ${data.all_rows.length} stored passwords`, 'step');
+        await sleep(400);
+
+        renderMatchingTable(data);
+        logLine(`⑥ Closest match: "${data.best_match}"  (γ=${data.gamma}, k_β1=${data.k1}, k_β2=${data.k2})`, 'ok');
+        await sleep(300);
+
+        document.getElementById('stat-gamma').textContent = data.gamma;
+        document.getElementById('stat-k1').textContent = data.k1;
+        document.getElementById('stat-k2').textContent = data.k2;
+        document.getElementById('bit-stats').style.display = '';
+
+        updateSimilarityCards(data);
+        logLine(`⑦ Jaccard = ${data.jaccard.toFixed(4)}   Dice = ${data.dice.toFixed(4)}   Cosine = ${data.cosine.toFixed(4)}`, 'step');
+        await sleep(350);
+
+        const reject = data.jaccard >= currentThreshold;
+        const rule = reject
+            ? `${data.jaccard.toFixed(4)} ≥ ${currentThreshold.toFixed(2)} → REJECT`
+            : `${data.jaccard.toFixed(4)} < ${currentThreshold.toFixed(2)} → ACCEPT`;
+        logLine(`⑧ Apply threshold rule: ${rule}`, reject ? 'err' : 'ok');
+
+        updateDecisionPanel(data);
+        renderExplain();
+    } catch (e) {
+        setError('Rendering failed: ' + e.message);
+        logLine('✗ Rendering failed: ' + e.message, 'err');
+    }
+}
+
+/* ── Threshold slider (recomputes instantly from the last /check response) ── */
+function onThresholdChange(newVal) {
+    currentThreshold = parseFloat(newVal);
+    document.getElementById('threshold-slider').value = currentThreshold;
+    document.getElementById('threshold-value-label').textContent = currentThreshold.toFixed(2);
+    if (lastCheckData) {
+        updateSimilarityCards(lastCheckData);
+        updateDecisionPanel(lastCheckData);
+        renderMatchingTable(lastCheckData);
+    }
+}
+
+/* ── Calculate Best Threshold ── */
+async function calculateBestThreshold() {
+    const btn = document.getElementById('threshold-optimize-btn');
+    btn.disabled = true;
+    btn.textContent = 'Calculating …';
+    try {
+        const res = await fetch('/threshold/optimize', { method: 'POST' });
+        const data = await res.json();
+        if (data.error) { alert(data.error); return; }
+
+        document.getElementById('to-recommended').textContent = 'Threshold = ' + data.recommended_threshold.toFixed(4);
+        document.getElementById('to-reasoning').textContent = data.reasoning;
+        document.getElementById('to-precision').textContent = data.precision.toFixed(4);
+        document.getElementById('to-recall').textContent = data.recall.toFixed(4);
+        document.getElementById('to-f1').textContent = data.f1.toFixed(4);
+        document.getElementById('threshold-results').style.display = '';
+        document.getElementById('to-apply-btn').onclick = () => onThresholdChange(data.recommended_threshold);
+    } catch (e) {
+        alert('Request failed — is the server running?');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Calculate Best Threshold For Current Dataset';
+    }
+}
+
+/* ── Dataset management ── */
+function setDsMessage(msg, isError) {
+    const el = document.getElementById('ds-message');
+    el.textContent = msg;
+    el.className = 'ds-message ' + (isError ? 'c-red' : 'c-green');
+}
+
+function applyDatasetStats(stats) {
+    document.getElementById('hdr-filename').textContent = stats.filename;
+    document.getElementById('hdr-entries').textContent = stats.count;
+    document.getElementById('ds-stat-count').textContent = stats.count;
+    document.getElementById('ds-stat-avglen').textContent = stats.avg_length;
+    document.getElementById('ds-stat-unique').textContent = stats.unique_count;
+    document.getElementById('ds-stat-occupancy').textContent = (stats.occupancy_rate * 100).toFixed(2) + '%';
+    document.getElementById('bloom-idx').max = stats.count;
+    syncSidebarTop();
+}
+
+/* Keeps the sticky sidebar's offset in sync with the header's real height
+   (the header can wrap onto a second line once the dataset filename or
+   entry count changes), so the header never overlaps/clips the sidebar. */
+function syncSidebarTop() {
+    const header = document.getElementById('siteHeader');
+    if (!header) return;
+    document.documentElement.style.setProperty('--sidebar-top', (header.offsetHeight + 16) + 'px');
+}
+window.addEventListener('resize', syncSidebarTop);
+
+function clearAnalysisViews() {
+    lastCheckData = null;
+    document.getElementById('justif-card').style.display = 'none';
+    document.getElementById('atomTable').innerHTML = '';
+    document.getElementById('chipsWrap').innerHTML = '';
+    document.getElementById('candidate-bloom-grid').innerHTML = '';
+    document.getElementById('candidate-bits-set').textContent = '';
+    document.getElementById('bigramMeta').textContent = 'Bi-grams and their per-atom Bloom filters will appear here after you analyze a password.';
+    document.getElementById('bit-stats').style.display = 'none';
+    setVerdictIdle();
+    renderExplain();
+}
+
+async function reloadDataset() {
+    setDsMessage('Reloading dataset.txt …', false);
+    try {
+        const res = await fetch('/dataset/reload', { method: 'POST' });
+        const data = await res.json();
+        if (data.error) { setDsMessage(data.error, true); return; }
+        applyDatasetStats(data);
+        await loadDatasetBloom();
+        setDsMessage(`Reloaded dataset.txt — ${data.count} passwords.`, false);
+        clearAnalysisViews();
+    } catch (e) { setDsMessage('Request failed — is the server running?', true); }
+}
+
+async function uploadDataset() {
+    const input = document.getElementById('ds-upload-input');
+    if (!input.files.length) { setDsMessage('Choose a .txt file first.', true); return; }
+    const fd = new FormData();
+    fd.append('file', input.files[0]);
+    setDsMessage('Uploading …', false);
+    try {
+        const res = await fetch('/dataset/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (data.error) { setDsMessage(data.error, true); return; }
+        applyDatasetStats(data);
+        await loadDatasetBloom();
+        setDsMessage(`Loaded "${data.filename}" — ${data.count} passwords.`, false);
+        clearAnalysisViews();
+    } catch (e) { setDsMessage('Request failed — is the server running?', true); }
+}
+
+async function loadDatasetBloom() {
+    try {
+        const res = await fetch('/dataset/global-bloom');
+        const data = await res.json();
+        renderBitGrid(document.getElementById('dataset-bloom-grid'), data.beta, { mode: 'single', color: 'cyan' });
+        document.getElementById('dataset-bits-set').textContent = `${data.bits_set} / ${data.L}`;
+        document.getElementById('dataset-occupancy').textContent = (data.occupancy_rate * 100).toFixed(2) + '%';
+        const fpVal = Math.min(data.fp_estimate, 0.94);
+        document.getElementById('dataset-fp').textContent = fpVal < 0.0001 ? fpVal.toExponential(2) : fpVal.toFixed(4);
+
+        const noteEl = document.getElementById('dataset-saturation-note');
+        if (data.occupancy_rate >= 0.9) {
+            document.getElementById('dataset-saturation-text').textContent =
+                `${(data.occupancy_rate * 100).toFixed(1)}% of the ${data.L}-bit vector is set, so a single shared ` +
+                `filter can no longer reliably distinguish members from non-members (estimated false-positive rate ` +
+                `${(Math.min(data.fp_estimate, 0.94) * 100).toFixed(1)}%). This is exactly why the assignment compares each ` +
+                `password's own β(p) vector with Jaccard / Dice / Cosine instead of testing membership against ` +
+                `this single OR'ed filter.`;
+            noteEl.style.display = '';
+        } else {
+            noteEl.style.display = 'none';
+        }
+    } catch (e) { /* status bar communicates connectivity elsewhere */ }
+}
+
+/* ── Dataset entry viewer (#17 / #55) ── */
+async function loadBloom(rawIndex) {
+    const index = parseInt(rawIndex, 10);
+    if (!index || index < 1) return;
+    document.getElementById('bloom-error').style.display = 'none';
+    document.getElementById('bloom-result').style.display = 'none';
+    try {
+        const res = await fetch(`/bloom/${index}`);
+        const data = await res.json();
+        if (data.error) {
+            document.getElementById('bloom-error').textContent = data.error;
+            document.getElementById('bloom-error').style.display = '';
+            return;
+        }
+        document.getElementById('bloom-meta').innerHTML =
+            `<strong>Entry #${data.index}</strong>: "${escapeHtml(data.password)}" &mdash; <strong>${data.bits_set}</strong> / ${L_CONST} bits set`;
+        renderBitGrid(document.getElementById('bloom-grid'), data.beta, { mode: 'single', color: 'purple' });
+        document.getElementById('bloom-result').style.display = '';
+    } catch (_) {
+        document.getElementById('bloom-error').textContent = 'Request failed — is the server running?';
+        document.getElementById('bloom-error').style.display = '';
+    }
+}
+
+/* ── Init ── */
+window.addEventListener('load', async () => {
+    document.getElementById('statusBar').innerHTML =
+        `Dataset: {{ db_size }} passwords loaded &middot; L = {{ L }} bits &middot; k = {{ K }} hash functions &middot; SHA-256 + MD5`;
+    syncSidebarTop();
+    onThresholdChange(document.getElementById('threshold-slider').value);
+    await loadDatasetBloom();
+    try {
+        const res = await fetch('/dataset/stats');
+        const stats = await res.json();
+        applyDatasetStats(stats);
+    } catch (e) { /* server-rendered values already populated the page */ }
+});
+</script>
+</body>
+</html>
